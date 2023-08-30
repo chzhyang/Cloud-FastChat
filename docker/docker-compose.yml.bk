@@ -1,0 +1,61 @@
+version: "3.9"
+networks:
+  llm:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
+services:
+  fastchat-controller:
+    build:
+      context: .
+      dockerfile: Dockerfile,worker
+    image: chzhyang/fschat:v1
+    environment:
+      - NO_PROXY=localhost,127.0.0.1,172.19.0.2,172.19.0.3
+    ports:
+      - "21000:21000"
+    entrypoint: ["python3.9", "-m", "fastchat.serve.controller", "--host", "0.0.0.0", "--port", "21000"]
+    networks:
+      llm:
+        ipv4_address: 172.19.0.1
+  fastchat-model-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    volumes:
+      - /home/sdp/models:/models
+    image: chzhyang/fschat:v1
+    environment:
+      - NO_PROXY=localhost,127.0.0.1,172.19.0.1, 172.19.0.3
+    ports:
+      - "21002:21002"
+      #deploy:
+      #resources:
+        #reservations:
+          #devices:
+            # - driver: nvidia
+              # count: 1
+                #     capabilities: [gpu]
+    entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--device", "cpu", "--model-names", "${FASTCHAT_WORKER_MODEL_NAMES:-chatglm2-6b}", "--model-path", "${FASTCHAT_WORKER_MODEL_PATH:-/models/chatglm2-6b}", "--worker-address", "http://172.19.0.1:21002", "--controller-address", "http://172.19.0.1:21000", "--host", "0.0.0.0", "--port", "21002"]
+    # entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--device", "cpu", "--model-names", "${FASTCHAT_WORKER_MODEL_NAMES:-chatglm2-6b}", "--model-path", "${FASTCHAT_WORKER_MODEL_PATH:-/models/chatglm2-6b}", "--worker-address", "http://fastchat-model-worker:21002", "--controller-address", "http://fastchat-controller:21000", "--host", "0.0.0.0", "--port", "21002"]
+    networks:
+      llm:
+        ipv4_address: 172.19.0.2
+  fastchat-api-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: chzhyang/fschat:v1
+    environment:
+      - NO_PROXY=localhost,127.0.0.1,172.19.0.1,172.19.0.2
+    ports:
+      - "8000:8000"
+    entrypoint: ["python3.9", "-m", "fastchat.serve.openai_api_server", "--controller-address", "http://172.19.0.1:21000", "--host", "0.0.0.0", "--port", "8000"]
+    # entrypoint: ["python3.9", "-m", "fastchat.serve.openai_api_server", "--controller-address", "http://fastchat-controller:21000", "--host", "0.0.0.0", "--port", "8000"]
+      #volumes:
+      # model-registry:/home/sdp/models
+    networks:
+      llm:
+        ipv4_address: 172.19.0.3
+  

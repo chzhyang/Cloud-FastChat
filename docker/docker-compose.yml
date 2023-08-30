@@ -6,31 +6,43 @@ services:
       context: .
       dockerfile: Dockerfile
     image: fastchat:latest
+    environment:
+      - NO_PROXY=localhost,127.0.0.1, fastchat-model-worker, fastchat-api-server
     ports:
       - "21001:21001"
     entrypoint: ["python3.9", "-m", "fastchat.serve.controller", "--host", "0.0.0.0", "--port", "21001"]
+
   fastchat-model-worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.worker
     volumes:
-      - huggingface:/root/.cache/huggingface
-    image: fastchat:latest
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--model-names", "${FASTCHAT_WORKER_MODEL_NAMES:-vicuna-7b-v1.3}", "--model-path", "${FASTCHAT_WORKER_MODEL_PATH:-lmsys/vicuna-7b-v1.3}", "--worker-address", "http://fastchat-model-worker:21002", "--controller-address", "http://fastchat-controller:21001", "--host", "0.0.0.0", "--port", "21002"]
+      - /home/sdp/models:/models
+    image: fastchat:worker
+    environment:
+      - NO_PROXY=localhost,127.0.0.1, fastchat-controller
+    ports:
+      - "21002:21002"
+      #deploy:
+      #resources:
+        #reservations:
+          #devices:
+            # - driver: nvidia
+              # count: 1
+                #     capabilities: [gpu]
+    entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--device", "cpu", "--model-names", "${FASTCHAT_WORKER_MODEL_NAMES:-chatglm2-6b}", "--model-path", "${FASTCHAT_WORKER_MODEL_PATH:-/models/chatglm2-6b}", "--worker-address", "http://fastchat-model-worker", "--controller-address", "http://fastchat-controller:21001", "--host", "0.0.0.0", "--port", "21002"]
+    # entrypoint: ["python3.9", "-m", "fastchat.serve.model_worker", "--device", "cpu", "--model-names", "${FASTCHAT_WORKER_MODEL_NAMES:-chatglm2-6b}", "--model-path", "${FASTCHAT_WORKER_MODEL_PATH:-/models/chatglm2-6b}", "--worker-address", "http://fastchat-model-worker:21002", "--controller-address", "http://fastchat-controller:21001", "--host", "0.0.0.0", "--port", "21002"]
+
   fastchat-api-server:
     build:
       context: .
       dockerfile: Dockerfile
     image: fastchat:latest
+    environment:
+      - NO_PROXY=localhost,127.0.0.1, fastchat-controller, fastchat-model-worker
     ports:
       - "8000:8000"
     entrypoint: ["python3.9", "-m", "fastchat.serve.openai_api_server", "--controller-address", "http://fastchat-controller:21001", "--host", "0.0.0.0", "--port", "8000"]
-volumes:
-  huggingface:
+    # entrypoint: ["python3.9", "-m", "fastchat.serve.openai_api_server", "--controller-address", "http://fastchat-controller:21001", "--host", "0.0.0.0", "--port", "8000"]
+      #volumes:
+      # model-registry:/home/sdp/models
